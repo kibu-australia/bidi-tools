@@ -1,19 +1,24 @@
 (ns bidi-tools.core
   (:require [clojure.string :as string]
-            [cemerick.url :as url :refer [url-encode url-decode]]
+            [cemerick.url :refer [url-encode url-decode]]
             [bidi.bidi :as bidi]
             [clojure.walk :as walk]))
 
-;; Bidi + query params
 (defn- query-string->params [q]
-  (into {} (comp (map #(string/split % #"="))
-                 (map (fn [[k v]] [(keyword k) (url-decode v)])))
-        (string/split q #"&")))
+  (loop [params (string/split q #"&") params-map {}]
+    (if-let [param (first params)]
+      (let [[k v] (string/split param #"=")
+            n     (- (count k) 2)]
+        (if (= (drop n k) [\[ \]])
+          (let [k (apply str (take n k))]
+            (recur (rest params) (update-in params-map [(keyword k)] conj v)))
+          (recur (rest params) (assoc params-map (keyword k) v))))
+      params-map)))
 
-(defn match-route-with-query [route path]
+(defn match-route-with-query [routes path]
   (let [[path query] (string/split path #"\?")
         query-params (query-string->params query)]
-    (assoc (bidi/match-route route path) :query-params query-params)))
+    (assoc (bidi/match-route routes path) :query-params query-params)))
 
 ;; cljc version of ring.util.codec FormEncodeable protocol
 ;; Difference is it accepts no custom encoding and uses UTF-8
@@ -27,14 +32,14 @@
 
   #?(:cljs cljs.core.PersistentTreeMap :clj clojure.lang.PersistentTreeMap)
   (form-encode [params]
-    (letfn [(encode [x] (form-encode x))
-            (encode-param [[k v]] (str (encode (name k)) "=" (encode v)))]
+    (letfn [(encode [x] (form-encode (name x)))
+            (encode-param [[k v]] (str k "=" (encode v)))]
       (->> params
            (mapcat
             (fn [[k v]]
-              (if (or (seq? v) (sequential? v) )
-                (map #(encode-param [k (url-decode %)]) v)
-                [(encode-param [k (url-decode (str v))])])))
+              (if (or (seq? v) (sequential? v))
+                (map #(encode-param [(str (encode k) "[]") (url-decode %)]) v)
+                [(encode-param [(encode k) (url-decode (str v))])])))
            (string/join "&"))))
 
   #?(:cljs default :clj Object)
@@ -50,7 +55,6 @@
                                   (filter (fn [[_ v]] (some? v))
                                           (apply dissoc all-params (keys route-params)))))]
     (apply str path (when query-params ["?" (form-encode query-params)]))))
-
 
 (defprotocol IBidiIdentity
   (bidi-identity [this]))
