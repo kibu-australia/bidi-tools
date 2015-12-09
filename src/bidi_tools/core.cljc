@@ -56,6 +56,9 @@
                                           (apply dissoc all-params (keys route-params)))))]
     (apply str path (when query-params ["?" (form-encode query-params)]))))
 
+(defn url-for [routes handler params]
+  (apply path-with-query-for routes handler (apply concat (vec params))))
+
 (defprotocol IBidiIdentity
   (bidi-identity [this]))
 
