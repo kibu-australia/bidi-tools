@@ -47,7 +47,7 @@
   #?(:cljs cljs.core.PersistentTreeMap :clj clojure.lang.PersistentTreeMap)
   (form-encode [params] (map->query-string params))
 
-  #?(:cljs :cljs.core.PersistentArrayMap :clj clojure.lang.PersistentArrayMap)
+  #?(:cljs cljs.core.PersistentArrayMap :clj clojure.lang.PersistentArrayMap)
   (form-encode [params] (map->query-string params))
 
   #?(:cljs default :clj Object)
