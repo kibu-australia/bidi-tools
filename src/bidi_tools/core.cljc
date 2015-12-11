@@ -10,8 +10,10 @@
       (let [[k v] (string/split param #"=")
             n     (- (count k) 2)]
         (if (= (drop n k) [\[ \]])
-          (let [k (apply str (take n k))]
-            (recur (rest params) (update-in params-map [(keyword k)] conj v)))
+          (let [k (apply str (take n k))
+                update-seq (comp (partial filter identity) (partial cons v))]
+            (recur (rest params)
+                   (update-in params-map [(keyword k)] update-seq)))
           (recur (rest params) (assoc params-map (keyword k) v))))
       params-map)))
 
@@ -26,21 +28,27 @@
 (defprotocol FormEncodeable
   (form-encode [x]))
 
+(defn- encode-param [[k v]] (str k "=" (form-encode v)))
+
+(defn- build-query-string [[k v]]
+  (if (or (seq? v) (sequential? v))
+    (map #(encode-param [(str (form-encode k) "[]") (url-decode %)]) v)
+    [(encode-param [(form-encode k) (url-decode (str v))])]))
+
+(defn- map->query-string [params] (string/join "&" (mapcat build-query-string params)))
+
 (extend-protocol FormEncodeable
   #?(:cljs string :clj String)
   (form-encode [unencoded] (url-encode unencoded))
 
+  #?(:cljs cljs.core.Keyword :clj clojure.lang.Keyword)
+  (form-encode [unencoded] (form-encode (name unencoded)))
+
   #?(:cljs cljs.core.PersistentTreeMap :clj clojure.lang.PersistentTreeMap)
-  (form-encode [params]
-    (letfn [(encode [x] (form-encode (name x)))
-            (encode-param [[k v]] (str k "=" (encode v)))]
-      (->> params
-           (mapcat
-            (fn [[k v]]
-              (if (or (seq? v) (sequential? v))
-                (map #(encode-param [(str (encode k) "[]") (url-decode %)]) v)
-                [(encode-param [(encode k) (url-decode (str v))])])))
-           (string/join "&"))))
+  (form-encode [params] (map->query-string params))
+
+  #?(:cljs :cljs.core.PersistentArrayMap :clj clojure.lang.PersistentArrayMap)
+  (form-encode [params] (map->query-string params))
 
   #?(:cljs default :clj Object)
   (form-encode [x] (form-encode (str x))))
@@ -49,11 +57,10 @@
   "Like path-for, but extra parameters will be appended to the url as query parameters
   rather than silently ignored"
   [route handler & {:as all-params}]
-  (let [path (apply bidi/path-for route handler (flatten (vec all-params)))
+  (let [path (apply bidi/path-for route handler (apply concat (vec all-params)))
         {:keys [route-params]} (bidi/match-route route path)
-        query-params (not-empty (into (sorted-map)
-                                  (filter (fn [[_ v]] (some? v))
-                                          (apply dissoc all-params (keys route-params)))))]
+        query-params' (apply dissoc all-params (keys route-params))
+        query-params  (not-empty (into (sorted-map) (filter (fn [[_ v]] (some? v))) query-params'))]
     (apply str path (when query-params ["?" (form-encode query-params)]))))
 
 (defn url-for [routes handler params]
