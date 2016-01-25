@@ -2,20 +2,30 @@
   (:require [clojure.string :as string]
             [cemerick.url :refer [url-encode url-decode]]
             [bidi.bidi :as bidi]
-            [clojure.walk :as walk]))
+            [clojure.walk :as walk]
+            [schema.core :as s]
+            [schema.coerce :as coerce]))
 
-(defn- query-string->params [q]
-  (loop [params (string/split q #"&") params-map {}]
-    (if-let [param (first params)]
-      (let [[k v] (string/split param #"=")
-            n     (- (count k) 2)]
-        (if (= (drop n k) [\[ \]])
-          (let [k (apply str (take n k))
-                update-seq (comp (partial filter identity) (partial cons v))]
-            (recur (rest params)
-                   (update-in params-map [(keyword k)] update-seq)))
-          (recur (rest params) (assoc params-map (keyword k) v))))
-      params-map)))
+(def ^:private coercer #(coerce/coercer % coerce/json-coercion-matcher))
+
+(defn- coerce-sequential [schema [k v]]
+  (if-let [s (get schema k (get schema (s/optional-key k)))]
+    (if (sequential? s)
+      [k v]
+      [k (first v)])
+    (if (= 1 (count v))
+      [k (first v)]
+      [k v])))
+
+(defn query-string->params
+  ([q] (query-string->params q {s/Keyword s/Any}))
+  ([q schema]
+   (loop [params (string/split q #"&") params-map {}]
+     (if-let [param (first params)]
+       (let [[k v] (string/split param #"=")]
+         (recur (rest params) (update-in params-map [k] conj v)))
+       ((coercer schema)
+        (into {} (map (partial coerce-sequential schema)) params-map))))))
 
 (defn match-route-with-query [routes path]
   (let [[path query] (string/split path #"\?")
@@ -32,7 +42,7 @@
 
 (defn- build-query-string [[k v]]
   (if (or (seq? v) (sequential? v))
-    (map #(encode-param [(str (form-encode k) "[]") (url-decode %)]) v)
+    (map #(encode-param [(form-encode k) (url-decode (str %))]) v)
     [(encode-param [(form-encode k) (url-decode (str v))])]))
 
 (defn- map->query-string [params] (string/join "&" (mapcat build-query-string params)))
