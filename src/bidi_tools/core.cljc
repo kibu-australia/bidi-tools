@@ -23,7 +23,7 @@
    (loop [params (string/split q #"&") params-map {}]
      (if-let [param (first params)]
        (let [[k v] (string/split param #"=")]
-         (recur (rest params) (update-in params-map [k] conj v)))
+         (recur (rest params) (update-in params-map [(keyword k)] conj v)))
        ((coercer schema)
         (into {} (map (partial coerce-sequential schema)) params-map))))))
 
