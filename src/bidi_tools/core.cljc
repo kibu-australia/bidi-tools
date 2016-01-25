@@ -17,8 +17,11 @@
       [k (first v)]
       [k v])))
 
+(def ^:private default-query-params-schema
+  {s/Keyword s/Any})
+
 (defn query-string->params
-  ([q] (query-string->params q {s/Keyword s/Any}))
+  ([q] (query-string->params q default-query-params-schema))
   ([q schema]
    (loop [params (string/split q #"&") params-map {}]
      (if-let [param (first params)]
@@ -27,9 +30,10 @@
        ((coercer schema)
         (into {} (map (partial coerce-sequential schema)) params-map))))))
 
-(defn match-route-with-query [routes path]
-  (let [[path query] (string/split path #"\?")
-        query-params (query-string->params query)]
+(defn match-route-with-query [routes path & {:keys [query-params-schema]}]
+  (let [query-params-schema (or query-params-schema default-query-params-schema)
+        [path query]        (string/split path #"\?")
+        query-params        (query-string->params query query-params-schema)]
     (assoc (bidi/match-route routes path) :query-params query-params)))
 
 ;; cljc version of ring.util.codec FormEncodeable protocol
