@@ -67,14 +67,17 @@
   #?(:cljs default :clj Object)
   (form-encode [x] (form-encode (str x))))
 
+(defn get-query-params [route path params]
+  (let [{:keys [route-params]} (bidi/match-route route path)
+        query-params' (apply dissoc params (keys route-params))]
+    (not-empty (into (sorted-map) (filter (fn [[_ v]] (some? v))) query-params'))))
+
 (defn path-with-query-for
   "Like path-for, but extra parameters will be appended to the url as query parameters
   rather than silently ignored"
   [route handler & {:as all-params}]
-  (let [path (apply bidi/path-for route handler (apply concat (vec all-params)))
-        {:keys [route-params]} (bidi/match-route route path)
-        query-params' (apply dissoc all-params (keys route-params))
-        query-params  (not-empty (into (sorted-map) (filter (fn [[_ v]] (some? v))) query-params'))]
+  (let [path         (apply bidi/path-for route handler (apply concat (vec all-params)))
+        query-params (get-query-params route path all-params)]
     (apply str path (when query-params ["?" (form-encode query-params)]))))
 
 (defn url-for [routes handler params]
