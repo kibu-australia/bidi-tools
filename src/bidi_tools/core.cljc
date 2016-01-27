@@ -33,7 +33,6 @@
     [k (read-fn v)]))
 
 (defn read-query-params [params schema]
-  (println params schema)
   (let [params (into {} (map (partial read-query-param schema)) params)]
     (s/validate schema params)))
 
