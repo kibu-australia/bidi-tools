@@ -9,7 +9,7 @@
   {s/Keyword s/Any})
 
 (defrecord QueryParam [schema reader writer]
-  schema.core.Schema
+  schema.core/Schema
   (spec [_] (s/spec schema))
   (explain [_] (s/explain schema)))
 
