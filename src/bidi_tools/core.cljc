@@ -3,22 +3,39 @@
             [cemerick.url :refer [url-encode url-decode]]
             [bidi.bidi :as bidi]
             [clojure.walk :as walk]
-            [schema.core :as s]
-            [schema.coerce :as coerce]))
-
-(def ^:private coercer #(coerce/coercer % coerce/json-coercion-matcher))
-
-(defn- coerce-sequential [schema [k v]]
-  (if-let [s (get schema k (get schema (s/optional-key k)))]
-    (if (sequential? s)
-      [k v]
-      [k (first v)])
-    (if (= 1 (count v))
-      [k (first v)]
-      [k v])))
+            [schema.core :as s]))
 
 (def ^:private default-query-params-schema
   {s/Keyword s/Any})
+
+(defrecord QueryParam [schema reader writer]
+  schema.core.Schema
+  (spec [_] (s/spec schema))
+  (explain [_] (s/explain schema)))
+
+(defn query-param [schema reader writer]
+  (QueryParam. schema reader writer))
+
+(defn- write-query-param [schema [k v]]
+  (let [write-fn (or (get-in schema [k :writer])
+                     (get-in schema [(s/optional-key k) :writer])
+                     identity)]
+    [k (write-fn v)]))
+
+(defn write-query-params [params schema]
+  (let [params (s/validate schema params)]
+    (into {} (map (partial write-query-param schema)) params)))
+
+(defn- read-query-param [schema [k v]]
+  (let [read-fn (or (get-in schema [k :reader])
+                    (get-in schema [(s/optional-key k) :reader])
+                    #(if (= 1 (count %)) (first %) %))]
+    [k (read-fn v)]))
+
+(defn read-query-params [params schema]
+  (println params schema)
+  (let [params (into {} (map (partial read-query-param schema)) params)]
+    (s/validate schema params)))
 
 (defn query-string->params
   ([q] (query-string->params q default-query-params-schema))
@@ -27,8 +44,7 @@
      (if-let [param (first params)]
        (let [[k v] (string/split param #"=")]
          (recur (rest params) (update-in params-map [(keyword k)] conj v)))
-       ((coercer schema)
-        (into {} (map (partial coerce-sequential schema)) params-map))))))
+       (read-query-params params-map schema)))))
 
 (defn match-route-with-query [routes path & {:keys [query-params-schema]}]
   (let [query-params-schema (or query-params-schema default-query-params-schema)
@@ -75,13 +91,16 @@
 (defn path-with-query-for
   "Like path-for, but extra parameters will be appended to the url as query parameters
   rather than silently ignored"
-  [route handler & {:as all-params}]
+  [route handler query-params-schema & {:as all-params}]
   (let [path         (apply bidi/path-for route handler (apply concat (vec all-params)))
         query-params (get-query-params route path all-params)]
-    (apply str path (when query-params ["?" (form-encode query-params)]))))
+    (apply str path (when query-params ["?" (form-encode (write-query-params query-params query-params-schema))]))))
 
-(defn url-for [routes handler params]
-  (apply path-with-query-for routes handler (apply concat (vec params))))
+(defn url-for
+  ([routes handler params]
+   (url-for routes handler params default-query-params-schema))
+  ([routes handler params query-params-schema]
+   (apply path-with-query-for routes handler query-params-schema (apply concat (vec params)))))
 
 (defprotocol IBidiIdentity
   (bidi-identity [this]))
