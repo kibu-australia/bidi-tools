@@ -1,4 +1,4 @@
-(defproject kibu/bidi-tools "0.3.0-SNAPSHOT"
+(defproject kibu/bidi-tools "0.3.0"
   :description "Tools for bidi"
   :url "https://github.com/kibu-australia/bidi-tools"
   :license {:name "Eclipse Public License"
